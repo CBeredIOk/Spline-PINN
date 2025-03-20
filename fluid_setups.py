@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as f
 import numpy as np
-from PIL import Image
 
 """
 design of dataset-grid to make training easier:
@@ -28,16 +27,14 @@ o---o---o---o
 => the fully interpolated fields can only be computed if they are surrounded by the hidden_grid -> only in the center cell possible (1 x 1)
 """
 
-cyber_truck = (torch.mean(torch.tensor(np.asarray(Image.open('imgs/cyber.png'))).float(),dim=2)<100).float()
-fish = (torch.mean(torch.tensor(np.asarray(Image.open('imgs/fish.png'))).float(),dim=2)<100).float()
-smiley = (torch.mean(torch.tensor(np.asarray(Image.open('imgs/smiley.png'))).float(),dim=2)<100).float()
-wing = (torch.mean(torch.tensor(np.asarray(Image.open('imgs/wing_profile.png'))).float(),dim=2)<100).float()
-
-images = {"cyber":cyber_truck, "fish":fish, "smiley":smiley, "wing":wing}
 
 class Dataset():
 	
-	def __init__(self,w,h,hidden_size,resolution_factor=4,batch_size=100,n_samples=1,dataset_size=1000,average_sequence_length=5000,interactive=False,max_speed=1000,brown_damping=0.9995,brown_velocity=0.005,init_velocity=0,dt=1,types=["simple"],images=["cyber","fish","smiley","wing"]):
+	def __init__(
+			self, w, h, hidden_size, resolution_factor=4, batch_size=100, n_samples=1, dataset_size=1000,
+			average_sequence_length=5000, interactive=False, max_speed=1000, brown_damping=0.9995, brown_velocity=0.005,
+			init_velocity=0, dt=1, images: dict={}, image_names: list=[],types=["simple"]
+	):
 		"""
 		:w,h: width / height of grid
 		:hidden_size: size of hidden state
@@ -69,6 +66,7 @@ class Dataset():
 		self.dt = dt
 		self.types = types
 		self.images = images
+		self.image_names = image_names
 		self.env_info = [{} for _ in range(dataset_size)]
 		
 		self.padding_x = 5  # 5
@@ -281,8 +279,8 @@ class Dataset():
 			self.mousew = object_w # flow velocity of ecmo device
 		
 		if type == "image":
-			image = np.random.choice(self.images)
-			image_mask = images[image]
+			image = np.random.choice(self.image_names)
+			image_mask = self.images[image]
 			object_h, object_w = image_mask.shape[0], image_mask.shape[1]
 			flow_v = self.max_speed*(np.random.rand()-0.5)*2
 			
@@ -723,7 +721,7 @@ class Dataset():
 			self.v_mask_full_res[index,:,:,-(self.padding_y*self.resolution_factor):] = 1
 			
 			image = self.env_info[index]["image"]
-			image_mask = images[image]
+			image_mask = self.images[image]
 			
 			self.v_mask_full_res[index,:,int(self.resolution_factor*object_x-object_h//2):int(self.resolution_factor*object_x-object_h//2+object_h),int(self.resolution_factor*object_y-object_w//2):int(self.resolution_factor*object_y-object_w//2+object_w)] = 1-(1-self.v_mask_full_res[index,:,int(self.resolution_factor*object_x-object_h//2):int(self.resolution_factor*object_x-object_h//2+object_h),int(self.resolution_factor*object_y-object_w//2):int(self.resolution_factor*object_y-object_w//2+object_w)])*(1-image_mask)
 			self.v_cond_full_res[index,:]=0

@@ -24,10 +24,10 @@ class Logger():
 		:use_tensorboard: log output to tensorboard
 		"""
 		self.name = name
-		if datetime:
+		if datetime: # AXAXAXAXXAXAXAXA SOSI
 			self.datetime=datetime
 		else:
-			self.datetime = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+			self.datetime = dt.datetime.now().strftime("%Y_%m_%d %H_%M_%S")
 		
 		self.use_csv = use_csv
 		if use_csv:

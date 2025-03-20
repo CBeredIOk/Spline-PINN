@@ -72,7 +72,11 @@ def params():
 	parser.add_argument('--n_warmup_steps', default=None, type=int, help='number of warm up steps to perform when loading model in order to initialize dataset (default: None)')
 	parser.add_argument('--load_optimizer', default=False, type=str2bool, help='load state of optimizer (default: True)')
 	parser.add_argument('--load_latest', default=False, type=str2bool, help='load latest version for training (if True: leave load_date_time and load_index None. default: False)')
-	
+
+	# Type of simulation
+	parser.add_argument("--type", type=str, default="DFG_benchmark", help="Simulation type: DFG_benchmark, box, magnus, image, ecmo, poiseuille")
+	parser.add_argument("--image", type=str, default=None, help="Image name for 'image' simulation type (if not specified, selected randomly)")
+
 	# parse parameters
 	params = parser.parse_args()
 	print(f"Parameters: {vars(params)}")
