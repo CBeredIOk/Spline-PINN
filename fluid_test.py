@@ -4,6 +4,7 @@ from operators import vector2HSV
 from get_param import params,toCuda,toCpu,get_hyperparam_fluid
 from Logger import Logger
 import cv2
+import copy
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -190,7 +191,7 @@ while not exit_loop:
             print(f"C_D / C_L = {cd_cl}")
 
         # visualize fields
-        if i%1==0:
+        if i % 1 == 0:
 
             print(f"env_info: {dataset.env_info[0]}")
 
@@ -259,75 +260,117 @@ while not exit_loop:
                 dataset.mouse_erase=False
                 mouse_erase=False
 
-            if key==ord('p'): # print fields using matplotlib
+            if key==ord('p'):
+
+                os.makedirs("plots", exist_ok=True)
+
+                v_np = toCpu(v).numpy()
+                v_x = v_np[0, 0, resolution_factor:-resolution_factor, resolution_factor:-resolution_factor]
+                v_y = v_np[0, 1, resolution_factor:-resolution_factor, resolution_factor:-resolution_factor]
+
+                figsize = (12, 4)
+
+                mask_np = toCpu(dataset.v_mask_full_res[0, 0,
+                                resolution_factor:-resolution_factor,
+                                resolution_factor:-resolution_factor]).numpy()
+
+                v_x_masked = np.ma.masked_where(mask_np == 1, v_x)
+                v_y_masked = np.ma.masked_where(mask_np == 1, v_y)
+
+                jet_cmap = copy.copy(plt.cm.jet)
+                jet_cmap.set_bad('k', 1.0)
+
+                v_x_masked = np.rot90(v_x_masked, k=1)
+                v_y_masked = np.rot90(v_y_masked, k=1)
+
+                # Plotting for the X component of velocity
+                fig1, ax1 = plt.subplots(figsize=figsize)
+                im1 = ax1.imshow(v_x_masked, cmap=jet_cmap, origin='lower',
+                                 vmin=np.min(v_x_masked), vmax=np.max(v_x_masked))
+                ax1.set_title("X velocity")
+                ax1.set_xlabel("x")
+                ax1.set_ylabel("y")
+                ax1.invert_yaxis()
+                cbar1 = plt.colorbar(im1, ax=ax1)
+                cbar1.set_label("Value v_x")
+                plt.tight_layout()
+                plt.savefig(f"plots/velocity_x_{get_hyperparam_fluid(params)}_vel_{dataset.mousev}.png", dpi=300)
+
+                # Plotting for the Y component of velocity
+                fig2, ax2 = plt.subplots(figsize=figsize)
+                im2 = ax2.imshow(v_y_masked, cmap=jet_cmap, origin='lower',
+                                 vmin=np.min(v_y_masked), vmax=np.max(v_y_masked))
+                ax2.set_title("Y velocity")
+                ax2.set_xlabel("x")
+                ax2.set_ylabel("y")
+                ax2.invert_yaxis()
+                cbar2 = plt.colorbar(im2, ax=ax2)
+                cbar2.set_label("Value v_y")
+                plt.tight_layout()
+                plt.savefig(f"plots/velocity_y_{get_hyperparam_fluid(params)}_vel_{dataset.mousev}.png", dpi=300)
 
                 os.makedirs("plots",exist_ok=True)
                 name = dataset.env_info[0]["type"]
                 if name=="image":
                     name = name+"_"+dataset.env_info[0]["image"]
 
-                # my_code
                 save_results("v", v)
                 save_results("p", p)
                 save_results("a_z", a_z)
 
-                splitter = '-' * 100
-
-                print(splitter)
-                print(f'Tensor size v: {v.shape}')
-                print(f'Type of elements v: {v.dtype}')
-                print(f'Total number of elements v: {v.numel()}')
-                print(splitter)
-                print(f'Tensor size p: {p.shape}')
-                print(f'Type of elements p: {p.dtype}')
-                print(f'Total number of elements p: {p.numel()}')
-                print(splitter)
-                print(f'Tensor size a_z: {a_z.shape}')
-                print(f'Type of elements a_z: {a_z.dtype}')
-                print(f'Total number of elements a_z: {a_z.numel()}')
-                print(splitter)
-
-                # create pressure plot with streamlines
+                # Create pressure plot with streamlines
                 flow = v[0,:,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor].cpu().detach().clone()
                 image = vector2HSV(flow)
                 flow = toCpu(flow).numpy()
-                fig = plt.figure(1,figsize=(15,5))
-                ax = fig.add_subplot()
-                Y,X = np.mgrid[0:flow.shape[1],0:flow.shape[2]]
-                linewidth = image[:,:,2]/np.max(image[:,:,2])
-                ax.streamplot(Y.transpose(),X.transpose(),  flow[0].transpose()[::-1], -flow[1].transpose()[::-1], color='k', density=3,linewidth=2*linewidth.transpose()[::-1])
+                fig3 = plt.figure(3, figsize=(12, 4))
+                fig3.tight_layout()
+                ax3 = fig3.add_subplot()
+                ax3.set_title("Pressure with streamlines")
+
+                Y,X = np.mgrid[0:flow.shape[1], 0:flow.shape[2]]
+                linewidth = image[:,:,2] / np.max(image[:,:,2])
+                ax3.streamplot(Y.transpose(),X.transpose(),  flow[0].transpose()[::-1], -flow[1].transpose()[::-1], color='k', density=3,linewidth=2*linewidth.transpose()[::-1])
+
+                # Standard palette
                 palette = plt.cm.gnuplot2
                 palette.set_bad('k',1.0)
 
+                # ANSYS palette
+                jet_cmap = copy.copy(plt.cm.jet)
+                jet_cmap.set_bad('k', 1.0)
+
                 p = p[0,0,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor].cpu().detach()
                 cond_mask = dataset.v_mask_full_res[0,0,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor]
-                pm = np.ma.masked_where(toCpu(cond_mask).numpy()==1, toCpu(p).numpy())
-                plt.imshow(pm.transpose()[::-1],cmap=palette)
+                p_m = np.ma.masked_where(toCpu(cond_mask).numpy()==1, toCpu(p).numpy())
+                # plt.imshow(pm.transpose()[::-1],cmap=palette)
+                plt.imshow(p_m.transpose()[::-1], cmap=jet_cmap)
                 plt.axis('off')
-                divider = make_axes_locatable(ax)
+                divider = make_axes_locatable(ax3)
                 cax = divider.append_axes("right",size="5%",pad=0.05)
                 plt.colorbar(cax=cax)
                 plt.savefig(f"plots/flow_and_pressure_field_{name}_{get_hyperparam_fluid(params)}_vel_{dataset.mousev}.png", bbox_inches='tight',dpi=300)
 
-                # create velocity magnitude plot and pressure plot with streamlines
-                fig = plt.figure(2,figsize=(30,5))
-                fig.tight_layout()
-                ax = fig.add_subplot(1,2,1)
-                plt.imshow(np.linalg.norm(flow,axis=0).transpose()[::-1])
-                plt.axis('off')
-                divider = make_axes_locatable(ax)
-                cax = divider.append_axes("right",size="5%",pad=0.05)
-                plt.colorbar(cax=cax)
+                v_norm = np.linalg.norm(flow, axis=0)
 
-                ax = fig.add_subplot(1,2,2)
-                ax.streamplot(Y.transpose(),X.transpose(),  flow[0].transpose()[::-1], -flow[1].transpose()[::-1], color='k', density=3,linewidth=2*linewidth.transpose()[::-1])
-                plt.imshow(pm.transpose()[::-1],cmap=palette)
+                cond_mask_np = toCpu(dataset.v_mask_full_res[0, 0,
+                                     resolution_factor:-resolution_factor,
+                                     resolution_factor:-resolution_factor]).numpy()
+
+                v_norm_m = np.ma.masked_where(cond_mask_np == 1, v_norm)
+
+                # Create velocity magnitude plot
+                fig4 = plt.figure(4, figsize=(12, 4))
+                fig4.tight_layout()
+                ax4 = fig4.add_subplot()
+                ax4.set_title("Velocity magnitude")
+
+                # plt.imshow(np.linalg.norm(flow,axis=0).transpose()[::-1])
+                # plt.imshow(np.linalg.norm(flow, axis=0).transpose()[::-1], cmap='jet')
+                plt.imshow(v_norm_m.transpose()[::-1], cmap=jet_cmap)
                 plt.axis('off')
-                divider = make_axes_locatable(ax)
+                divider = make_axes_locatable(ax4)
                 cax = divider.append_axes("right",size="5%",pad=0.05)
                 plt.colorbar(cax=cax)
-                plt.subplots_adjust(0.05,0.05,0.95,0.95,0.1,0.1)
-                plt.savefig(f"plots/flow_and_pressure_field_sep_{name}_{get_hyperparam_fluid(params)}_vel_{dataset.mousev}.png", bbox_inches='tight',dpi=300)
 
                 """
                 # save results in vtk files
@@ -352,9 +395,13 @@ while not exit_loop:
                     # visualize pressure forces:
                     palette = plt.cm.gnuplot2
                     palette.set_bad('k',1.0)
+
+                    jet_cmap = copy.copy(plt.cm.jet)
+                    jet_cmap.set_bad('k', 1.0)
+
                     p = p[0,0].cpu().detach()
                     cond_mask = dataset.v_mask_full_res[0,0]
-                    pm = np.ma.masked_where(toCpu(cond_mask).numpy()==1, toCpu(p).numpy())
+
                     flow = v[0,:].cpu().detach().clone()
                     flow[:,:resolution_factor] = 0
                     flow[:,:,:resolution_factor] = 0
@@ -362,10 +409,15 @@ while not exit_loop:
                     flow[:,:,-resolution_factor:] = 0
                     flow = toCpu(flow).numpy()
 
-                    fig = plt.figure(3,figsize=(12,5))
+                    v_norm = np.linalg.norm(flow, axis=0)
+                    v_m = np.ma.masked_where(cond_mask == 1, v_norm)
+                    p_m = np.ma.masked_where(toCpu(cond_mask).numpy() == 1, toCpu(p).numpy())
+
+                    fig5 = plt.figure(5, figsize=figsize)
                     plt.clf()
-                    ax = fig.add_subplot(1,2,2)
-                    plt.imshow(pm.transpose(),cmap=palette)
+                    ax5_1 = fig5.add_subplot(1,2,2)
+                    # plt.imshow(p_m.transpose(), cmap=palette)
+                    plt.imshow(p_m.transpose(), cmap=jet_cmap)
                     pressure_force/= torch.max(pressure_force)
                     pressure_force*=resolution_factor
                     for j in range(0,x.shape[0],2):
@@ -377,13 +429,15 @@ while not exit_loop:
                     plt.xlabel("x axis")
                     plt.ylabel("y axis")
                     plt.axis('off')
-                    divider = make_axes_locatable(ax)
+                    divider = make_axes_locatable(ax5_1)
                     cax = divider.append_axes("right",size="5%",pad=0.05)
                     plt.colorbar(cax=cax)
 
                     # visualize viscous forces:
-                    ax = fig.add_subplot(1,2,1)
-                    plt.imshow(np.linalg.norm(flow,axis=0).transpose())
+                    ax5_2 = fig5.add_subplot(1,2,1)
+                    # plt.imshow(np.linalg.norm(flow,axis=0).transpose())
+                    # plt.imshow(np.linalg.norm(flow, axis=0).transpose(), cmap=jet_cmap)
+                    plt.imshow(v_m.transpose(), cmap=jet_cmap)
                     viscous_force/= torch.max(viscous_force)
                     viscous_force*=resolution_factor
                     for j in range(0,x.shape[0],2):
@@ -395,13 +449,13 @@ while not exit_loop:
                     plt.xlabel("x axis")
                     plt.ylabel("y axis")
                     plt.axis('off')
-                    divider = make_axes_locatable(ax)
+                    divider = make_axes_locatable(ax5_2)
                     cax = divider.append_axes("right",size="5%",pad=0.05)
                     plt.colorbar(cax=cax)
                     plt.savefig(f"plots/pressure_viscous_forces_{name}_{get_hyperparam_fluid(params)}_vel_{dataset.mousev}.png", bbox_inches='tight',dpi=300)
 
                     # plot drag and lift coefficients over time
-                    plt.figure(4)
+                    plt.figure(6)
                     plt.plot(cd_cl_t[:,0])
                     plt.plot(cd_cl_t[:,1])
                     plt.title("$C_D$ / $C_L$ over time")
@@ -449,41 +503,41 @@ while not exit_loop:
                     # -------------------------------------------------------------------------------------------------
 
                     # Retrieve cylinder parameters (assuming the environment type is “magnus” or “DFG_benchmark”)
-                    radius = dataset.env_info[0].get("r", 10)  # if r is not specified, the default value is used
-                    center = np.array([dataset.env_info[0].get("x", p.shape[1] // 2),
-                                       dataset.env_info[0].get("y", p.shape[0] // 2)])
-                    # Bring center to full-resolution (since p_img is cut with resolution_factor indentation)
-                    center_full = center * resolution_factor
-
-                    # Set the set of angles from 0 to π (0 is the stagnation point, π is the opposite)
-                    num_points = 100  # number of points along the arc
-                    phi = np.linspace(-np.pi / 2, np.pi / 2, num_points)  # angles in radians
-
-                    # Calculate the coordinates of the points on the circle
-                    # If radius is given in units of the original grid, then for full-res we scale it by multiplying it by resolution_factor
-                    x_coords = center_full[0] + radius * resolution_factor * np.cos(phi)
-                    y_coords = center_full[1] + radius * resolution_factor * np.sin(phi)
-
-                    # Since p_img is obtained after resolution_factor indentation, shift coordinates
-                    x_coords_adj = x_coords - resolution_factor
-                    y_coords_adj = y_coords - resolution_factor
-
-                    # Ensure that the coordinates remain within the p_img array
-                    x_coords_adj = np.clip(x_coords_adj, 0, p.shape[1] - 1)
-                    y_coords_adj = np.clip(y_coords_adj, 0, p.shape[0] - 1)
-
-                    # Extract pressure values (by nearest pixel)
-                    p_values = [p[int(round(y)), int(round(x))] for x, y in zip(x_coords_adj, y_coords_adj)]
+                    # radius = dataset.env_info[0].get("r", 10)  # if r is not specified, the default value is used
+                    # center = np.array([dataset.env_info[0].get("x", p.shape[1] // 2),
+                    #                    dataset.env_info[0].get("y", p.shape[0] // 2)])
+                    # # Bring center to full-resolution (since p_img is cut with resolution_factor indentation)
+                    # center_full = center * resolution_factor
+                    #
+                    # # Set the set of angles from 0 to π (0 is the stagnation point, π is the opposite)
+                    # num_points = 100  # number of points along the arc
+                    # phi = np.linspace(-np.pi / 2, np.pi / 2, num_points)  # angles in radians
+                    #
+                    # # Calculate the coordinates of the points on the circle
+                    # # If radius is given in units of the original grid, then for full-res we scale it by multiplying it by resolution_factor
+                    # x_coords = center_full[0] + radius * resolution_factor * np.cos(phi)
+                    # y_coords = center_full[1] + radius * resolution_factor * np.sin(phi)
+                    #
+                    # # Since p_img is obtained after resolution_factor indentation, shift coordinates
+                    # x_coords_adj = x_coords - resolution_factor
+                    # y_coords_adj = y_coords - resolution_factor
+                    #
+                    # # Ensure that the coordinates remain within the p_img array
+                    # x_coords_adj = np.clip(x_coords_adj, 0, p.shape[1] - 1)
+                    # y_coords_adj = np.clip(y_coords_adj, 0, p.shape[0] - 1)
+                    #
+                    # # Extract pressure values (by nearest pixel)
+                    # p_values = [p[int(round(y)), int(round(x))] for x, y in zip(x_coords_adj, y_coords_adj)]
 
                     # Plot the pressure versus angle (convert radians to degrees)
-                    plt.plot(6, figsize=(8, 4))
-                    plt.plot(np.degrees(phi), p_values, 'bo-', label='Pressure')
-                    plt.xlabel('Angle (degrees)')
-                    plt.ylabel('Pressure')
-                    plt.title('Pressure distribution on the front half of the cylinder')
-                    plt.grid(True)
-                    plt.legend()
-                    plt.show()
+                    # plt.plot(6, figsize=(8, 4))
+                    # plt.plot(np.degrees(phi), p_values, 'bo-', label='Pressure')
+                    # plt.xlabel('Angle (degrees)')
+                    # plt.ylabel('Pressure')
+                    # plt.title('Pressure distribution on the front half of the cylinder')
+                    # plt.grid(True)
+                    # plt.legend()
+                    # plt.show()
 
                 plt.show()
 
