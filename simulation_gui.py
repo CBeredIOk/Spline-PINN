@@ -40,7 +40,7 @@ class SimulationGUI(QMainWindow):
 
         # Drop-down list for selecting the simulation type
         self.input_type = QComboBox()
-        simulation_types = ["DFG_benchmark", "box", "magnus", "image", "ecmo", "poiseuille"]
+        simulation_types = ["DFG_benchmark", "box", "magnus", "image", "ecmo", "poiseuille", "paint"]
         self.input_type.addItems(simulation_types)
 
         # Drop-down list for selecting an image, load the list from the imgs folder

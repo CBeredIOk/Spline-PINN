@@ -1,19 +1,19 @@
-from fluid_setups import Dataset
-from spline_models import superres_2d_velocity,superres_2d_pressure,get_Net,interpolate_states
-from operators import vector2HSV
-from get_param import params,toCuda,toCpu,get_hyperparam_fluid
-from Logger import Logger
 import cv2
 import copy
 import torch
+import time, os
 import numpy as np
 import matplotlib.pyplot as plt
-import time,os
+
+from PIL import Image
 from numpy2vtk import imageToVTK
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-import os
-from PIL import Image
+from Logger import Logger
+from fluid_setups import Dataset
+from operators import vector2HSV
+from get_param import params, toCuda, toCpu, get_hyperparam_fluid
+from spline_models import superres_2d_velocity, superres_2d_pressure, get_Net, interpolate_states
 
 
 def load_images_from_folder(folder="imgs", threshold=100):
@@ -54,7 +54,7 @@ torch.manual_seed(0)
 torch.set_num_threads(4)
 np.random.seed(0)
 
-save_movie=False #True
+save_movie=False # True
 movie_FPS = 30.0 # 8.0 # 15.0 # ... choose FPS as provided in visualization
 # params.width = 230 if params.width is None else params.width
 # params.height = 49 if params.height is None else params.height
@@ -78,9 +78,16 @@ dataset = Dataset(
 )
 
 # initialize windows / movies / mouse handler
-cv2.namedWindow('a_z',cv2.WINDOW_NORMAL)
-cv2.namedWindow('v',cv2.WINDOW_NORMAL)
-cv2.namedWindow('p',cv2.WINDOW_NORMAL)
+# cv2.namedWindow('a_z',cv2.WINDOW_NORMAL)
+cv2.namedWindow('Velocity magnitude', cv2.WINDOW_NORMAL)
+cv2.namedWindow('Velocity direction', cv2.WINDOW_NORMAL)
+cv2.namedWindow('Velocity direction legend', cv2.WINDOW_NORMAL)
+cv2.namedWindow('Pressure', cv2.WINDOW_NORMAL)
+
+cv2.resizeWindow('Velocity magnitude', 240, 680)
+cv2.resizeWindow('Velocity direction', 180, 680)
+cv2.resizeWindow('Velocity direction legend', 180, 180)
+cv2.resizeWindow('Pressure', 240, 680)
 
 def save_results(tensor_name, tensor):
     tensor_np = tensor.cpu().detach().numpy()
@@ -107,15 +114,15 @@ def mousePosition(event, x, y, flags, param):
         dataset.mousex = y/resolution_factor
         dataset.mousey = x/resolution_factor
 
-cv2.setMouseCallback("a_z",mousePosition)
-cv2.setMouseCallback("v",mousePosition)
-cv2.setMouseCallback("p",mousePosition)
+# cv2.setMouseCallback("a_z",mousePosition)
+cv2.setMouseCallback("Velocity magnitude", mousePosition)
+cv2.setMouseCallback("Velocity direction", mousePosition)
+cv2.setMouseCallback("Pressure", mousePosition)
 
-cv2.namedWindow('v_legend',cv2.WINDOW_NORMAL)
 vector = torch.cat([torch.arange(-1,1,0.01).unsqueeze(0).unsqueeze(2).repeat(1,1,200),torch.arange(-1,1,0.01).unsqueeze(0).unsqueeze(1).repeat(1,200,1)])
 image = vector2HSV(vector)
-image = cv2.cvtColor(image,cv2.COLOR_HSV2BGR)
-cv2.imshow('v_legend',image)
+image = cv2.cvtColor(image, cv2.COLOR_HSV2BGR)
+cv2.imshow('Velocity direction legend', image)
 
 # load fluid model
 model = toCuda(get_Net(params))
@@ -129,7 +136,7 @@ last_FPS = 0
 last_time = time.time()
 
 # compute pressure and viscous forces
-def forces(grad_v,p,x,n):
+def forces(grad_v, p, x, n):
     """
     :grad_v: gradient of velocity field
     :p: pressure field
@@ -148,6 +155,54 @@ def forces(grad_v,p,x,n):
     pressure_force = ps.unsqueeze(1)*n[:,:]
     viscous_force = params.mu*dv_dn[:,:,0]
     return -pressure_force.detach(),viscous_force.detach()
+
+
+def make_colorbar(
+    min_val, max_val,
+    height=256,
+    width=60,
+    cmap=cv2.COLORMAP_JET,
+    num_ticks=5,
+    right_margin=140,
+    top_offset=20,
+    bottom_offset=20
+):
+    """
+    Creates a scale image (colorbar) with height (for the gradient itself),
+    plus top/bottom margins. Width = width + right_margin.
+    The top_offset and bottom_offset can be adjusted so that it doesn't crop the lettering.
+    """
+    gradient = np.linspace(255, 0, height, dtype=np.uint8).reshape(-1, 1)
+    colorbar = np.repeat(gradient, width, axis=1)
+    colorbar = cv2.applyColorMap(colorbar, cmap)  # (height, width, 3)
+
+    total_height = height + top_offset + bottom_offset
+    total_width = width + right_margin
+
+    bar_full = np.zeros((total_height, total_width, 3), dtype=np.uint8)
+
+    bar_full[top_offset : top_offset + height, 0 : width] = colorbar
+
+    tick_values = np.linspace(min_val, max_val, num_ticks)
+    for val in tick_values:
+        fraction = (max_val - val) / (max_val - min_val)
+
+        x_pos = width + 5
+
+        y_pos = top_offset + int(fraction * (height - 1))
+
+        cv2.putText(
+            bar_full,
+            f"{val:.2f}",
+            (x_pos, y_pos + 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,  # scale of value on colorbar
+            (255, 255, 255),
+            2,  # thickness of value on colorbar
+            cv2.LINE_AA
+        )
+    return bar_full
+
 
 # simulation loop
 exit_loop = False
@@ -196,33 +251,109 @@ while not exit_loop:
             print(f"env_info: {dataset.env_info[0]}")
 
             # obtain interpolated field values for a_z,v,grad_v,laplace_v from spline coefficients of velocity field
-            a_z,v,grad_v,laplace_v = superres_2d_velocity(new_hidden_state[0:1,:v_size],orders_v,resolution_factor)
+            a_z, v, grad_v, laplace_v = superres_2d_velocity(new_hidden_state[0:1,:v_size],orders_v,resolution_factor)
 
             image = a_z[0,0,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor].cpu().detach().clone()
             image = image - torch.min(image)
             image /= torch.max(image)
-            image = toCpu(image).unsqueeze(2).repeat(1,1,3).numpy()
-            if save_movie:
-                movie_a.write((255*image).astype(np.uint8))
-            cv2.imshow('a_z',image)
+            image = toCpu(image).unsqueeze(2).repeat(1, 1, 3).numpy()
 
-            vector = v[0,:,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor].cpu().detach().clone()
-            image = vector2HSV(vector)
-            image = cv2.cvtColor(image,cv2.COLOR_HSV2BGR)
+            # if save_movie:
+            #     movie_a.write((255*image).astype(np.uint8))
+            # cv2.imshow('a_z',image)
+
+            mask_np = toCpu(dataset.v_mask_full_res[0, 0,
+                            resolution_factor:-resolution_factor,
+                            resolution_factor:-resolution_factor]).numpy()
+            mask_bool = (mask_np == 1)
+
+            vector = v[0, :, resolution_factor:-resolution_factor, resolution_factor:-resolution_factor].cpu().detach()
+
+            hsv_image = vector2HSV(vector)
+            direction_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
+
+            direction_image[mask_bool] = [0, 0, 0]
+
             if save_movie:
-                movie_v.write((255*image).astype(np.uint8))
-            cv2.imshow('v',image)
+                movie_v.write((255 * direction_image).astype(np.uint8))
+            cv2.imshow('Velocity direction', direction_image)
+
+            v_magnitude = torch.sqrt(vector[0] ** 2 + vector[1] ** 2)
+            v_magnitude = v_magnitude - torch.min(v_magnitude)
+            v_magnitude = v_magnitude / torch.max(v_magnitude)
+
+            gray_image = (255 * v_magnitude).type(torch.uint8).numpy()
+
+            colored_magnitude = cv2.applyColorMap(gray_image, cv2.COLORMAP_JET)
+
+            colored_magnitude[mask_bool] = [0, 0, 0]
+
+            real_min_val = float(torch.min(vector[0].hypot(vector[1])))
+            real_max_val = float(torch.max(vector[0].hypot(vector[1])))
+
+            height_img = colored_magnitude.shape[0]  # 1824
+
+            bar_height = height_img // 2  # 912
+            cb_magnitude = make_colorbar(
+                real_min_val,
+                real_max_val,
+                height=bar_height,
+                width=40,
+                num_ticks=5
+            )
+            bar_canvas = np.zeros((height_img, cb_magnitude.shape[1], 3), dtype=np.uint8)
+            offset = (height_img - cb_magnitude.shape[0]) // 2
+            bar_canvas[offset:offset + cb_magnitude.shape[0], 0:cb_magnitude.shape[1]] = cb_magnitude
+
+            colored_magnitude_with_bar = cv2.hconcat([colored_magnitude, bar_canvas])
+
+            if save_movie:
+                movie_v.write(colored_magnitude_with_bar)
+            cv2.imshow('Velocity magnitude', colored_magnitude_with_bar)
 
             # obtain interpolated field values for p,grad_p from spline coefficients of pressure field
-            p,grad_p = superres_2d_pressure(new_hidden_state[0:1,v_size:],orders_p,resolution_factor)
-            image = (1-dataset.v_mask_full_res)*p.cpu()
-            image = image[0,0,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor].detach().clone()
-            image = image - torch.min(image)
-            image /= torch.max(image)
-            image = toCpu(image).unsqueeze(2).repeat(1,1,3).numpy()
+            p, grad_p = superres_2d_pressure(new_hidden_state[0:1, v_size:], orders_p, resolution_factor)
+            p_for_visualization = p[0, 0, resolution_factor:-resolution_factor,
+                                  resolution_factor:-resolution_factor].cpu().detach()
+            mask = dataset.v_mask_full_res[0, 0, resolution_factor:-resolution_factor,
+                   resolution_factor:-resolution_factor].cpu()
+
+            p_numpy = p_for_visualization.numpy()
+            mask_np = mask.numpy().astype(bool)
+            valid_values = p_numpy[~mask_np]
+
+            real_min_p = float(valid_values.min())
+            real_max_p = float(valid_values.max())
+
+            p_norm = (p_for_visualization - real_min_p) / (real_max_p - real_min_p)
+            p_norm[mask == 1] = 0
+
+            gray_image = (255 * toCpu(p_norm)).type(torch.uint8).numpy()
+            colored_image = cv2.applyColorMap(gray_image, cv2.COLORMAP_JET)
+
+            height_img = colored_image.shape[0]
+            bar_height = height_img // 2
+
+            cb_pressure = make_colorbar(
+                min_val=real_min_p,
+                max_val=real_max_p,
+                height=bar_height,
+                width=40,
+                cmap=cv2.COLORMAP_JET,
+                num_ticks=5
+            )
+
+            bar_canvas = np.zeros((height_img, cb_pressure.shape[1], 3), dtype=np.uint8)
+            offset = (height_img - cb_pressure.shape[0]) // 2
+            bar_canvas[offset:offset + cb_pressure.shape[0], 0:cb_pressure.shape[1]] = cb_pressure
+
+            colored_image[mask_np] = [0, 0, 0]
+
+            pressure_with_bar = cv2.hconcat([colored_image, bar_canvas])
+
             if save_movie:
-                movie_p.write((255*image).astype(np.uint8))
-            cv2.imshow('p',image)
+                movie_p.write(pressure_with_bar)
+            cv2.imshow('Pressure', pressure_with_bar)
 
             key = cv2.waitKey(1)
 
@@ -559,5 +690,4 @@ if save_movie:
     movie_p.release()
     movie_v.release()
     movie_a.release()
-
 
