@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton,
-    QFormLayout, QLineEdit, QComboBox
+    QFormLayout, QLineEdit, QComboBox, QCheckBox
 )
 import subprocess
 import os
@@ -30,6 +30,9 @@ class SimulationGUI(QMainWindow):
     def initUI(self):
         central_widget = QWidget()
         layout = QVBoxLayout()
+
+        self.checkbox_center = QCheckBox("Center the geometry")
+        layout.addWidget(self.checkbox_center)
 
         # Form for specifying modeling parameters
         form_layout = QFormLayout()
@@ -82,7 +85,6 @@ class SimulationGUI(QMainWindow):
 
     def run_simulation(self):
         self.status_label.setText("Running a simulation...")
-        # Form a start command with parameter passing
         cmd = [
             "python", "fluid_test.py",
             "--net=" + self.input_net.text(),
@@ -91,9 +93,12 @@ class SimulationGUI(QMainWindow):
             "--rho=" + self.input_rho.text(),
             "--type=" + self.input_type.currentText()
         ]
-        # If the “image” type is selected, add the --image parameter with the selected name
         if self.input_type.currentText() == "image":
             cmd.append("--image=" + self.input_image.currentText())
+        if self.checkbox_center.isChecked():
+            cmd.append("--center_geometry=True")
+        else:
+            cmd.append("--center_geometry=False")
         self.simulation_process = subprocess.Popen(cmd)
 
     def stop_simulation(self):

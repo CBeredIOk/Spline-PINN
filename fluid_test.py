@@ -211,6 +211,12 @@ while not exit_loop:
     # reset environment (choose new random environment from types-list and reset velocity / pressure field to 0)
     dataset.reset_env(0)
 
+    if params.center_geometry:
+        dataset.env_info[0]["x"] = params.width / 2
+        dataset.env_info[0]["y"] = params.height / 2
+        dataset.mousex = params.width / 2
+        dataset.mousey = params.height / 2
+
     # buffers for drag / lift coefficients
     cd_cl_t = torch.zeros(200,2)
 
@@ -689,5 +695,5 @@ while not exit_loop:
 if save_movie:
     movie_p.release()
     movie_v.release()
-    movie_a.release()
+    # movie_a.release()
 
