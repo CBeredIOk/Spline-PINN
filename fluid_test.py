@@ -84,10 +84,10 @@ cv2.namedWindow('Velocity direction', cv2.WINDOW_NORMAL)
 cv2.namedWindow('Velocity direction legend', cv2.WINDOW_NORMAL)
 cv2.namedWindow('Pressure', cv2.WINDOW_NORMAL)
 
-cv2.resizeWindow('Velocity magnitude', 240, 680)
-cv2.resizeWindow('Velocity direction', 180, 680)
-cv2.resizeWindow('Velocity direction legend', 180, 180)
-cv2.resizeWindow('Pressure', 240, 680)
+cv2.resizeWindow('Velocity magnitude', 600, 120)  # 1205, 240
+cv2.resizeWindow('Velocity direction', 545, 120)  # 1095, 240
+cv2.resizeWindow('Velocity direction legend', 90, 90)  # 180, 180
+cv2.resizeWindow('Pressure', 600, 120)  # 1205, 240
 
 def save_results(tensor_name, tensor):
     tensor_np = tensor.cpu().detach().numpy()
@@ -157,51 +157,42 @@ def forces(grad_v, p, x, n):
     return -pressure_force.detach(),viscous_force.detach()
 
 
-def make_colorbar(
-    min_val, max_val,
-    height=256,
-    width=60,
-    cmap=cv2.COLORMAP_JET,
-    num_ticks=5,
-    right_margin=140,
-    top_offset=20,
-    bottom_offset=20
-):
-    """
-    Creates a scale image (colorbar) with height (for the gradient itself),
-    plus top/bottom margins. Width = width + right_margin.
-    The top_offset and bottom_offset can be adjusted so that it doesn't crop the lettering.
-    """
-    gradient = np.linspace(255, 0, height, dtype=np.uint8).reshape(-1, 1)
-    colorbar = np.repeat(gradient, width, axis=1)
-    colorbar = cv2.applyColorMap(colorbar, cmap)  # (height, width, 3)
+def make_colorbar(min_val, max_val, height=376, width=60,
+                         cmap=cv2.COLORMAP_JET, num_ticks=5,
+                         left_margin=150, top_offset=20, bottom_offset=20):
+        """
+        Создает вертикальную цветовую шкалу с текстовыми отметками, рассчитанную на заданную высоту.
+        Параметры:
+          - min_val, max_val: минимальное и максимальное значения для отображения.
+          - height: высота градиентной части (например, 376 пикселей).
+          - width: ширина самой цветовой полосы.
+          - left_margin: отступ слева, где будут располагаться текстовые подписи.
+          - top_offset и bottom_offset: отступы сверху и снизу (если нужны для точного позиционирования текста).
+        """
+        # Создаём градиент от 255 до 0 по заданной высоте
+        gradient = np.linspace(255, 0, height, dtype=np.uint8).reshape(-1, 1)
+        colorbar = np.repeat(gradient, width, axis=1)
+        colorbar = cv2.applyColorMap(colorbar, cmap)
 
-    total_height = height + top_offset + bottom_offset
-    total_width = width + right_margin
+        total_height = height + top_offset + bottom_offset
+        total_width = width + left_margin
 
-    bar_full = np.zeros((total_height, total_width, 3), dtype=np.uint8)
+        # Создаём полотно для всей цветовой шкалы (фон белый)
+        bar_full = np.ones((total_height, total_width, 3), dtype=np.uint8) * 255
 
-    bar_full[top_offset : top_offset + height, 0 : width] = colorbar
+        # Размещаем цветовую полосу с отступом слева
+        bar_full[top_offset:top_offset+height, left_margin:left_margin+width] = colorbar
 
-    tick_values = np.linspace(min_val, max_val, num_ticks)
-    for val in tick_values:
-        fraction = (max_val - val) / (max_val - min_val)
-
-        x_pos = width + 5
-
-        y_pos = top_offset + int(fraction * (height - 1))
-
-        cv2.putText(
-            bar_full,
-            f"{val:.2f}",
-            (x_pos, y_pos + 5),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,  # scale of value on colorbar
-            (255, 255, 255),
-            2,  # thickness of value on colorbar
-            cv2.LINE_AA
-        )
-    return bar_full
+        # Вычисляем позиции для отметок по вертикали и отрисовываем текст
+        tick_values = np.linspace(min_val, max_val, num_ticks)
+        for val in tick_values:
+                # Вычисляем вертикальную позицию в зависимости от значения
+                fraction = (max_val - val) / (max_val - min_val)
+                x_pos = 25  # координата X внутри левого отступа (настроить по необходимости)
+                y_pos = top_offset + int(fraction * (height - 1))
+                cv2.putText(bar_full, f"{val:.2f}", (x_pos, y_pos+5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2, cv2.LINE_AA)
+        return bar_full
 
 
 # simulation loop
@@ -278,8 +269,9 @@ while not exit_loop:
             hsv_image = vector2HSV(vector)
             direction_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
 
-            direction_image[mask_bool] = [0, 0, 0]
+            direction_image[mask_bool] = [255, 255, 255]
 
+            direction_image = cv2.rotate(direction_image, cv2.ROTATE_90_COUNTERCLOCKWISE)
             if save_movie:
                 movie_v.write((255 * direction_image).astype(np.uint8))
             cv2.imshow('Velocity direction', direction_image)
@@ -292,14 +284,17 @@ while not exit_loop:
 
             colored_magnitude = cv2.applyColorMap(gray_image, cv2.COLORMAP_JET)
 
-            colored_magnitude[mask_bool] = [0, 0, 0]
+            colored_magnitude[mask_bool] = [255, 255, 255]
+            colored_magnitude = cv2.rotate(colored_magnitude, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
             real_min_val = float(torch.min(vector[0].hypot(vector[1])))
             real_max_val = float(torch.max(vector[0].hypot(vector[1])))
 
-            height_img = colored_magnitude.shape[0]  # 1824
+            # print(f'\ncolored_magnitude.shape[...]: {colored_magnitude.shape[0]}, {colored_magnitude.shape[1]}\n')
 
-            bar_height = height_img // 2  # 912
+            height_img = colored_magnitude.shape[0]  # 376
+
+            bar_height = height_img - 40
             cb_magnitude = make_colorbar(
                 real_min_val,
                 real_max_val,
@@ -307,11 +302,11 @@ while not exit_loop:
                 width=40,
                 num_ticks=5
             )
-            bar_canvas = np.zeros((height_img, cb_magnitude.shape[1], 3), dtype=np.uint8)
+            bar_canvas = np.ones((height_img, cb_magnitude.shape[1], 3), dtype=np.uint8) * 255
             offset = (height_img - cb_magnitude.shape[0]) // 2
             bar_canvas[offset:offset + cb_magnitude.shape[0], 0:cb_magnitude.shape[1]] = cb_magnitude
 
-            colored_magnitude_with_bar = cv2.hconcat([colored_magnitude, bar_canvas])
+            colored_magnitude_with_bar = cv2.hconcat([bar_canvas, colored_magnitude])
 
             if save_movie:
                 movie_v.write(colored_magnitude_with_bar)
@@ -328,6 +323,10 @@ while not exit_loop:
             mask_np = mask.numpy().astype(bool)
             valid_values = p_numpy[~mask_np]
 
+            mask_uint8 = mask_np.astype(np.uint8) * 255  # преобразуем bool в 0 и 255
+            mask_rotated_uint8 = cv2.rotate(mask_uint8, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            mask_np = (mask_rotated_uint8 > 127)  # возвращаем булев тип
+
             real_min_p = float(valid_values.min())
             real_max_p = float(valid_values.max())
 
@@ -336,9 +335,10 @@ while not exit_loop:
 
             gray_image = (255 * toCpu(p_norm)).type(torch.uint8).numpy()
             colored_image = cv2.applyColorMap(gray_image, cv2.COLORMAP_JET)
+            colored_image = cv2.rotate(colored_image, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-            height_img = colored_image.shape[0]
-            bar_height = height_img // 2
+            height_img = colored_image.shape[0]  # 376
+            bar_height = height_img - 40
 
             cb_pressure = make_colorbar(
                 min_val=real_min_p,
@@ -349,14 +349,15 @@ while not exit_loop:
                 num_ticks=5
             )
 
-            bar_canvas = np.zeros((height_img, cb_pressure.shape[1], 3), dtype=np.uint8)
+            bar_canvas = np.ones((height_img, cb_pressure.shape[1], 3), dtype=np.uint8) * 255
             offset = (height_img - cb_pressure.shape[0]) // 2
             bar_canvas[offset:offset + cb_pressure.shape[0], 0:cb_pressure.shape[1]] = cb_pressure
 
-            colored_image[mask_np] = [0, 0, 0]
+            colored_image[mask_np] = [255, 255, 255]
 
-            pressure_with_bar = cv2.hconcat([colored_image, bar_canvas])
+            pressure_with_bar = cv2.hconcat([bar_canvas, colored_image])
 
+            # pressure_with_bar = cv2.rotate(pressure_with_bar, cv2.ROTATE_90_COUNTERCLOCKWISE)
             if save_movie:
                 movie_p.write(pressure_with_bar)
             cv2.imshow('Pressure', pressure_with_bar)
@@ -415,7 +416,7 @@ while not exit_loop:
                 v_y_masked = np.ma.masked_where(mask_np == 1, v_y)
 
                 jet_cmap = copy.copy(plt.cm.jet)
-                jet_cmap.set_bad('k', 1.0)
+                jet_cmap.set_bad('w', 1.0)
 
                 v_x_masked = np.rot90(v_x_masked, k=1)
                 v_y_masked = np.rot90(v_y_masked, k=1)
@@ -474,7 +475,7 @@ while not exit_loop:
 
                 # ANSYS palette
                 jet_cmap = copy.copy(plt.cm.jet)
-                jet_cmap.set_bad('k', 1.0)
+                jet_cmap.set_bad('w', 1.0)
 
                 p = p[0,0,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor].cpu().detach()
                 cond_mask = dataset.v_mask_full_res[0,0,resolution_factor:-resolution_factor,resolution_factor:-resolution_factor]
@@ -534,7 +535,7 @@ while not exit_loop:
                     palette.set_bad('k',1.0)
 
                     jet_cmap = copy.copy(plt.cm.jet)
-                    jet_cmap.set_bad('k', 1.0)
+                    jet_cmap.set_bad('w', 1.0)
 
                     p = p[0,0].cpu().detach()
                     cond_mask = dataset.v_mask_full_res[0,0]
@@ -549,6 +550,9 @@ while not exit_loop:
                     v_norm = np.linalg.norm(flow, axis=0)
                     v_m = np.ma.masked_where(cond_mask == 1, v_norm)
                     p_m = np.ma.masked_where(toCpu(cond_mask).numpy() == 1, toCpu(p).numpy())
+
+                    jet_cmap = copy.copy(plt.cm.jet)
+                    jet_cmap.set_bad('k', 1.0)
 
                     fig5 = plt.figure(5, figsize=figsize)
                     plt.clf()
