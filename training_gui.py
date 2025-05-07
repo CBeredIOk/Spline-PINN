@@ -54,7 +54,9 @@ class TrainingGUI(QMainWindow):
             "--mu=" + self.input_mu.text(),
             "--rho=" + self.input_rho.text(),
             "--loss_domain_res=" + self.input_loss_domain_res.text(),
-            "--loss_bound=" + self.input_loss_bound.text()
+            "--loss_bound=" + self.input_loss_bound.text(),
+            # "--loss_pressure_bc=20.0"  # <- new
+            "--loss_bernoulli=10.0"
         ]
         self.training_process = subprocess.Popen(cmd)
 

@@ -80,8 +80,8 @@ class fluid_model(nn.Module):
 		
 		# residual connections
 		out[:,:,:,:] = self.output_scaler*torch.tanh((out[:,:,:,:]+hidden_state[:,:,:,:])/self.output_scaler)
-		
-		#substract mean of a_z and p
+
+		# substract mean of a_z and p
 		out[:,0:1,:,:] = out[:,0:1,:,:]-torch.mean(out[:,0:1,:,:],dim=(2,3)).unsqueeze(2).unsqueeze(3)
 		out[:,(self.v_size):(self.v_size+1),:,:] = out[:,(self.v_size):(self.v_size+1),:,:]-torch.mean(out[:,(self.v_size):(self.v_size+1),:,:],dim=(2,3)).unsqueeze(2).unsqueeze(3)
 		return out

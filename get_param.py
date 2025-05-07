@@ -76,6 +76,11 @@ def params():
 	# Type of simulation
 	parser.add_argument("--type", type=str, default="DFG_benchmark", help="Simulation type: DFG_benchmark, box, magnus, image, ecmo, poiseuille")
 	parser.add_argument("--image", type=str, default=None, help="Image name for 'image' simulation type (if not specified, selected randomly)")
+	parser.add_argument('--center_geometry', default=False, type=str2bool, help='If True, the geometry will be centered in the center of the region')
+
+	# new ->
+	parser.add_argument('--loss_pressure_bc', default=0.0, type=float, help='loss factor to enforce p=0 at the outlet boundary')
+	parser.add_argument('--loss_bernoulli', default=10.0, type=float, help='Bernoulli violation penalty weight')
 
 	# parse parameters
 	params = parser.parse_args()

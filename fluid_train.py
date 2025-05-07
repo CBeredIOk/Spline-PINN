@@ -86,16 +86,22 @@ for epoch in range(params.load_index,params.n_epochs):
 			sample_domain_mask = (sample_domain_mask + sample_domain_mask*diffuse(sample_v_mask)*params.border_weight).detach()
 			
 			# interpolate spline coeffients to obtain: a_z, v, dv_dt, grad_v, laplace_v, p, grad_p
-			a_z,v,dv_dt,grad_v,laplace_v,p,grad_p = interpolate_states(old_hidden_state,new_hidden_state,offset,dt=dt,orders_v=orders_v,orders_p=orders_p)
+			a_z, v, dv_dt, grad_v, laplace_v, p, grad_p = interpolate_states(old_hidden_state,new_hidden_state,offset,dt=dt,orders_v=orders_v,orders_p=orders_p)
 			
 			# boundary loss
 			loss_boundary = torch.mean(sample_v_mask[:,:,1:-1,1:-1]*(v-sample_v_cond[:,:,1:-1,1:-1])**2,dim=(1,2,3))
-			
+
 			# navier stokes loss
 			grad_v_x = grad_v[:,0:2]
 			grad_v_y = grad_v[:,2:4]
 			laplace_v_x = laplace_v[:,0:1]
 			laplace_v_y = laplace_v[:,1:2]
+
+			# print(f'\n------------')
+			# print(f'\nsample_domain_mask: {sample_domain_mask.shape}')
+			# print(f'\ndv_dt: {dv_dt.shape}')
+			# print(f'\ngrad_v_x: {grad_v_x.shape}')
+			# print(f'\nlaplace_v_x: {laplace_v_x.shape}')
 			
 			# -> residual loss
 			loss_domain_x = torch.mean((sample_domain_mask[:,:,1:-1,1:-1])*(rho*(dv_dt[:,0:1]+v[:,0:1]*grad_v_x[:,0:1]+v[:,1:2]*grad_v_x[:,1:2])-mu*laplace_v_x+grad_p[:,0:1])**2,dim=(1,2,3))
@@ -117,9 +123,32 @@ for epoch in range(params.load_index,params.n_epochs):
 			loss_grad_p_x = torch.mean((sample_domain_mask[:,:,1:-1,1:-1])*(grad_p[:,0:1]-target_grad_p_x)**2,dim=(1,2,3))
 			loss_grad_p_y = torch.mean((sample_domain_mask[:,:,1:-1,1:-1])*(grad_p[:,1:2]-target_grad_p_y)**2,dim=(1,2,3))
 			loss_domain_p = loss_grad_p_x+loss_grad_p_y
+
+			# new ———>
+			# 1) вычислим B = p + 0.5 rho |v|^2  (игнорируем g·z)
+			speed2 = v[:, 0:1] ** 2 + v[:, 1:2] ** 2  # [bs, 1, H, W]
+			B = p + 0.5 * rho * speed2  # [bs, 1, H, W]
+
+			# 2) выберем «доменную» маску (без граничных ячеек)
+			domain = 1 - sample_v_mask[:, :, 1:-1, 1:-1]  # [bs,1,H-2,W-2]
+			Bc = B[:, :, :, :]  # обрезаем так же
+
+			# 3) вычислим среднее B по домену, чтобы не штрафовать глобальный уровень
+			B_mean = (Bc * domain).sum(dim=(2, 3), keepdim=True) / (domain.sum(dim=(2, 3), keepdim=True) + 1e-6)
+
+			# 4) штрафуем отклонение B от этого среднего
+			loss_bernoulli = torch.mean(domain * (Bc - B_mean) ** 2, dim=(1, 2, 3))
+			# <——— new
 			
-			loss_total = params.loss_bound*loss_boundary + params.loss_domain_res*loss_domain_res + params.loss_domain_up*loss_domain_up + params.loss_domain_p*loss_domain_p + loss_total
-		
+			loss_total = (
+					params.loss_bound * loss_boundary +
+					params.loss_domain_res * loss_domain_res +
+					params.loss_domain_up * loss_domain_up +
+					params.loss_domain_p * loss_domain_p +
+					loss_total +
+					params.loss_bernoulli * torch.mean(loss_bernoulli)  # <——— new
+			)
+
 		loss_total = torch.mean(torch.log(loss_total))/params.n_samples
 		
 		# reset old gradients to 0 and compute new gradients with backpropagation
@@ -143,12 +172,14 @@ for epoch in range(params.load_index,params.n_epochs):
 		print(f"loss_total: {loss_total.detach().cpu().numpy()}")
 		print(f"loss_domain: {torch.mean(loss_domain_up).detach().cpu().numpy()}")
 		print(f"loss_boundary: {torch.mean(loss_boundary).detach().cpu().numpy()}")
-		
-		if i%10 == 0:
+		print(f"loss_bernoulli: {torch.mean(loss_bernoulli).detach().cpu().numpy()}")
+
+		if i % 10 == 0:
 			logger.log(f"loss_total",loss_total.detach().cpu().numpy(),epoch*params.n_batches_per_epoch+i)
 			logger.log(f"loss_domain",torch.mean(loss_domain_up).detach().cpu().numpy(),epoch*params.n_batches_per_epoch+i)
 			logger.log(f"loss_boundary",torch.mean(loss_boundary).detach().cpu().numpy(),epoch*params.n_batches_per_epoch+i)
-			
+			logger.log(f"loss_bernoulli",torch.mean(loss_bernoulli).detach().cpu().numpy(),epoch*params.n_batches_per_epoch+i)
+
 	if params.log:
 		logger.save_state(model,optimizer,epoch+1)
 		
